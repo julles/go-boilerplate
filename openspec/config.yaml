@@ -13,6 +13,10 @@ context: |
   Saat security/performance bentrok dengan simpel, security & performance menang —
   tapi pilih cara paling simpel yang tetap aman & cepat.
 
+  Komentar kode WAJIB: setiap kode yang di-generate diberi komentar detail
+  (per baris / per blok logika) dalam Bahasa Indonesia, jelaskan maksud & "kenapa"-nya,
+  agar junior backend developer langsung paham.
+
 rules:
   proposal:
     - Tulis dalam Bahasa Indonesia.

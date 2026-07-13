@@ -12,6 +12,11 @@ Go backend boilerplate, dipakai ulang untuk banyak project.
 ## Konvensi
 - Semua config dari env (secret tak di-hardcode). `.env.example` = daftar semua env var yang dibutuhkan, tanpa secret asli; `.env` tidak di-commit.
 
+## Komentar kode (WAJIB)
+- Setiap kode yang di-generate WAJIB diberi komentar **detail**: per baris / per blok logika, jelaskan maksud & alurnya.
+- Komentar pakai **Bahasa Indonesia**, ditujukan agar junior backend developer langsung paham.
+- Jelaskan "kenapa"-nya, bukan cuma "apa"-nya. Berlaku di semua session & mesin.
+
 ## Git commit
 - JANGAN tambahkan trailer `Co-Authored-By` (mis. Claude/AI) di commit message. Commit hanya atas nama akun developer.
 - Berlaku di semua session & mesin — jangan pernah menyisipkan co-author AI apa pun.

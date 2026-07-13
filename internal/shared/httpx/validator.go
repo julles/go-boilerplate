@@ -22,6 +22,10 @@ func NewValidator() *Validator {
 }
 
 // Validate mengembalikan HTTP 400 dengan pesan singkat & aman bila tidak valid.
+//
+// Dibungkus sebagai echo.HTTPError 400 supaya ErrorHandler mengenalinya sebagai
+// error yang aman ditampilkan (bukan 500 generik) — ini membedakan "salah input
+// dari client" dengan "error internal server".
 func (val *Validator) Validate(i any) error {
 	if err := val.v.Struct(i); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, firstError(err))
@@ -32,10 +36,15 @@ func (val *Validator) Validate(i any) error {
 // firstError mengubah error validator menjadi pesan singkat (nama field + aturan yang gagal).
 // Aman ditampilkan ke client: hanya nama field & nama aturan, bukan detail internal.
 func firstError(err error) string {
+	// Validator bisa mengembalikan banyak error sekaligus; kita hanya ambil yang
+	// pertama agar pesan tetap ringkas dan cukup memberi tahu client apa yang salah.
 	var verrs validator.ValidationErrors
 	if errors.As(err, &verrs) && len(verrs) > 0 {
 		e := verrs[0]
+		// Hanya bocorkan nama field & nama aturan (mis. "code", "required"),
+		// bukan nilai yang dikirim client atau detail internal lainnya.
 		return fmt.Sprintf("field '%s' failed on the '%s' rule", strings.ToLower(e.Field()), e.Tag())
 	}
+	// Fallback bila error bukan ValidationErrors (jarang terjadi): pesan generik aman.
 	return "invalid input"
 }

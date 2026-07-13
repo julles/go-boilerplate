@@ -23,6 +23,23 @@ type Config struct {
 	RateEnabled  bool          // false = middleware rate limiter tidak dipasang
 
 	WorkerConcurrency int // jumlah task yang diproses paralel oleh worker
+
+	DBPool    DBPoolConfig    // tuning pool koneksi Postgres
+	RedisPool RedisPoolConfig // tuning pool koneksi Redis
+}
+
+// DBPoolConfig menampung parameter pool pgx.
+type DBPoolConfig struct {
+	MaxConns        int32
+	MinConns        int32
+	MaxConnLifetime time.Duration
+	MaxConnIdleTime time.Duration
+}
+
+// RedisPoolConfig menampung parameter pool go-redis.
+type RedisPoolConfig struct {
+	PoolSize     int
+	MinIdleConns int
 }
 
 // Load membaca konfigurasi dari env. Return error yang menyebut variable yang
@@ -43,8 +60,24 @@ func Load() (Config, error) {
 		RateEnabled:  getEnvBool("RATE_LIMIT_ENABLED", true),
 
 		WorkerConcurrency: getEnvInt("WORKER_CONCURRENCY", 10),
+
+		DBPool: DBPoolConfig{
+			MaxConns:        int32(getEnvInt("DB_MAX_CONNS", 10)),
+			MinConns:        int32(getEnvInt("DB_MIN_CONNS", 2)),
+			MaxConnLifetime: getEnvDuration("DB_MAX_CONN_LIFETIME", time.Hour),
+			MaxConnIdleTime: getEnvDuration("DB_MAX_CONN_IDLE_TIME", 30*time.Minute),
+		},
+		RedisPool: RedisPoolConfig{
+			PoolSize:     getEnvInt("REDIS_POOL_SIZE", 10),
+			MinIdleConns: getEnvInt("REDIS_MIN_IDLE_CONNS", 0),
+		},
 	}
 
+	// Validasi env wajib dilakukan TERAKHIR, setelah semua default terisi. Dengan
+	// begitu error yang dikembalikan hanya soal secret yang benar-benar hilang,
+	// bukan tercampur dengan parsing nilai opsional. Fail-fast: begitu satu env
+	// wajib kosong, kembalikan error dan biarkan proses berhenti saat startup,
+	// daripada baru meledak saat request pertama menyentuh DB/Redis.
 	var err error
 	if cfg.DatabaseURL, err = requireEnv("DATABASE_URL"); err != nil {
 		return cfg, err
@@ -55,6 +88,9 @@ func Load() (Config, error) {
 	return cfg, nil
 }
 
+// requireEnv mengambil env yang tidak boleh kosong. String kosong dianggap "tidak
+// diset" (bukan hanya nil), karena env var yang di-export tapi kosong sama tidak
+// bergunanya dengan yang absen — keduanya harus ditolak.
 func requireEnv(key string) (string, error) {
 	v := os.Getenv(key)
 	if v == "" {
@@ -63,6 +99,7 @@ func requireEnv(key string) (string, error) {
 	return v, nil
 }
 
+// getEnv: nilai opsional bertipe string. Kembali ke fallback bila env kosong.
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -70,6 +107,9 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+// getEnvBool: parsing gagal sengaja jatuh ke fallback (bukan error). Ini menjaga
+// konfigurasi tetap toleran — salah ketik pada flag opsional tidak boleh
+// menggagalkan boot; nilai default yang aman lebih baik daripada crash.
 func getEnvBool(key string, fallback bool) bool {
 	if v := os.Getenv(key); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
@@ -79,6 +119,7 @@ func getEnvBool(key string, fallback bool) bool {
 	return fallback
 }
 
+// getEnvInt: sama seperti getEnvBool, nilai non-numerik diabaikan dan pakai fallback.
 func getEnvInt(key string, fallback int) int {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
@@ -88,6 +129,8 @@ func getEnvInt(key string, fallback int) int {
 	return fallback
 }
 
+// getEnvDuration: menerima format durasi Go (mis. "5m", "1h30m", "500ms").
+// Format tidak valid diabaikan dan memakai fallback.
 func getEnvDuration(key string, fallback time.Duration) time.Duration {
 	if v := os.Getenv(key); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {

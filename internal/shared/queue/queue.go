@@ -8,6 +8,9 @@ import (
 	"github.com/hibiken/asynq"
 )
 
+// redisOpt memusatkan parsing REDIS_URL ke opsi koneksi Asynq. Dipakai bersama oleh
+// producer dan consumer supaya keduanya dijamin menunjuk ke Redis yang sama dan
+// format URL hanya diurai di satu tempat (hindari duplikasi/drift).
 func redisOpt(url string) (asynq.RedisConnOpt, error) {
 	opt, err := asynq.ParseRedisURI(url)
 	if err != nil {
@@ -16,7 +19,8 @@ func redisOpt(url string) (asynq.RedisConnOpt, error) {
 	return opt, nil
 }
 
-// NewClient membuat producer untuk enqueue task. Tutup dengan Close saat shutdown.
+// NewClient membuat producer untuk enqueue task. Tutup dengan Close saat shutdown
+// agar koneksi Redis tidak bocor.
 func NewClient(url string) (*asynq.Client, error) {
 	opt, err := redisOpt(url)
 	if err != nil {
@@ -25,7 +29,9 @@ func NewClient(url string) (*asynq.Client, error) {
 	return asynq.NewClient(opt), nil
 }
 
-// NewServer membuat consumer yang memproses task dengan konkurensi tertentu.
+// NewServer membuat consumer yang memproses task. concurrency menentukan berapa
+// banyak task diproses paralel oleh satu instance server — knob utama untuk
+// throughput vs. beban DB/downstream.
 func NewServer(url string, concurrency int) (*asynq.Server, error) {
 	opt, err := redisOpt(url)
 	if err != nil {

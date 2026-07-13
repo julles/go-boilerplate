@@ -46,6 +46,25 @@ Env di-inject via runtime (12-factor), `.env` dipakai untuk tooling lokal (docke
 | `OTLP_ENDPOINT` | | kosong | Endpoint OTLP; kosong = tracing mati |
 | `RATE_LIMIT` | | `100` | Request per window |
 | `RATE_WINDOW` | | `1m` | Panjang window |
+| `WORKER_CONCURRENCY` | | `10` | Task paralel di worker |
+| `DB_MAX_CONNS` | | `10` | Maks koneksi pool Postgres |
+| `DB_MIN_CONNS` | | `2` | Min koneksi idle (warm) |
+| `DB_MAX_CONN_LIFETIME` | | `1h` | Umur maks koneksi |
+| `DB_MAX_CONN_IDLE_TIME` | | `30m` | Idle sebelum ditutup |
+| `REDIS_POOL_SIZE` | | `10` | Ukuran pool Redis |
+| `REDIS_MIN_IDLE_CONNS` | | `0` | Min koneksi idle Redis |
+
+### Tuning pool per-binary
+
+api, worker, dan scheduler proses terpisah — set ukuran pool berbeda lewat env masing-masing, tanpa ubah kode:
+
+```
+api:        DB_MAX_CONNS=20   # traffic tinggi
+worker:     DB_MAX_CONNS=10   # ≈ WORKER_CONCURRENCY
+scheduler:  DB_MAX_CONNS=2    # cron sesekali
+```
+
+> ⚠️ Jaga `Σ(DB_MAX_CONNS × replica)` lintas semua binary **≤ `max_connections`** Postgres.
 
 ## Struktur
 
