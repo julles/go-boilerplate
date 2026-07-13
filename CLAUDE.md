@@ -12,6 +12,13 @@ Go backend boilerplate, dipakai ulang untuk banyak project.
 ## Konvensi
 - Semua config dari env (secret tak di-hardcode). `.env.example` = daftar semua env var yang dibutuhkan, tanpa secret asli; `.env` tidak di-commit.
 
+## Struktur modul (WAJIB ikut `internal/example`)
+- Setiap modul/fitur baru WAJIB mengikuti struktur & pola `internal/example` sebagai acuan:
+  `dto/` · `handler.go` · `service.go` · `repository.go` · `module.go` (+ `tasks.go`/`schedule.go` bila butuh worker/cron).
+- Alur tetap: `handler → service → repository`. Nama file tanpa prefix nama fitur (`handler.go`, bukan `merchant_handler.go`).
+- Wiring lewat `RegisterRoutes`/`RegisterTasks`/`RegisterSchedule`, dipanggil satu baris di `cmd/*`.
+- Detail langkah lihat `docs/add-new-module.md`.
+
 ## Komentar kode (WAJIB)
 - Setiap kode yang di-generate WAJIB diberi komentar **detail**: per baris / per blok logika, jelaskan maksud & alurnya.
 - Komentar pakai **Bahasa Indonesia**, ditujukan agar junior backend developer langsung paham.

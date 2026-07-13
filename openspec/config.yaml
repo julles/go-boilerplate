@@ -17,6 +17,11 @@ context: |
   (per baris / per blok logika) dalam Bahasa Indonesia, jelaskan maksud & "kenapa"-nya,
   agar junior backend developer langsung paham.
 
+  Struktur modul WAJIB mengikuti internal/example: tiap fitur satu folder berisi
+  dto/, handler.go, service.go, repository.go, module.go (+ tasks.go/schedule.go bila
+  perlu worker/cron). Alur handler -> service -> repository; wiring via
+  RegisterRoutes/RegisterTasks/RegisterSchedule. Lihat docs/add-new-module.md.
+
 rules:
   proposal:
     - Tulis dalam Bahasa Indonesia.
