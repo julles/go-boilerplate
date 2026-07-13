@@ -35,7 +35,7 @@ func firstError(err error) string {
 	var verrs validator.ValidationErrors
 	if errors.As(err, &verrs) && len(verrs) > 0 {
 		e := verrs[0]
-		return fmt.Sprintf("field '%s' gagal aturan '%s'", strings.ToLower(e.Field()), e.Tag())
+		return fmt.Sprintf("field '%s' failed on the '%s' rule", strings.ToLower(e.Field()), e.Tag())
 	}
-	return "input tidak valid"
+	return "invalid input"
 }

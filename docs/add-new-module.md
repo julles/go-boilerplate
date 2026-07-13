@@ -15,8 +15,12 @@ internal/product/
 ├── repository.go
 ├── service.go
 ├── handler.go
-└── module.go
+├── module.go
+├── tasks.go       (opsional) handler queue → dipakai cmd/worker
+└── schedule.go    (opsional) entry cron  → dipakai cmd/scheduler
 ```
+
+`tasks.go` dan `schedule.go` opsional — tambahkan hanya bila modul butuh background job / tugas terjadwal. Detailnya di [worker-queue.md](worker-queue.md).
 
 Nama file **tanpa** prefix nama fitur (`handler.go`, bukan `product_handler.go`) — package `product` sudah jadi namespace, jadi dari luar tetap terbaca `product.Handler`.
 

@@ -1,0 +1,61 @@
+# Menjalankan seluruh stack untuk pengembangan lokal: api + worker + scheduler + postgres + redis.
+# Jalankan: docker compose up --build
+#
+# Catatan: DATABASE_URL/REDIS_URL di sini menunjuk ke service (postgres/redis),
+# menimpa nilai di .env yang menunjuk localhost. Skema/tabel DB bukan bagian
+# boilerplate (non-goal migration) — arahkan ke DB yang sudah punya tabel bila perlu.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    env_file: .env
+    environment:
+      HTTP_PORT: ":8080"
+      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-secret}@postgres:5432/${POSTGRES_DB:-app}?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - redis
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-secret}@postgres:5432/${POSTGRES_DB:-app}?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.scheduler
+    env_file: .env
+    # Scheduler HARUS satu replica agar cron tidak ganda.
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-secret}@postgres:5432/${POSTGRES_DB:-app}?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis

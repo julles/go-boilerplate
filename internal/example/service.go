@@ -58,6 +58,22 @@ func (s *Service) List(ctx context.Context, p dto.QueryParams) ([]dto.MerchantRe
 	return out, nil
 }
 
+// ScanRecent mengambil merchant yang dibuat dalam durasi terakhir lalu memproses tiap baris.
+// Teladan pola scheduler "select rentang -> proses langsung". Mengembalikan jumlah baris.
+func (s *Service) ScanRecent(ctx context.Context, since time.Duration) (int, error) {
+	to := time.Now()
+	from := to.Add(-since)
+
+	merchants, err := s.repo.ListRecent(ctx, from, to)
+	if err != nil {
+		return 0, err
+	}
+	for range merchants {
+		// tempat logika pemrosesan per baris (di sini no-op sebagai teladan)
+	}
+	return len(merchants), nil
+}
+
 func toResponse(m Merchant) dto.MerchantResponse {
 	return dto.MerchantResponse{
 		ID:        m.ID,

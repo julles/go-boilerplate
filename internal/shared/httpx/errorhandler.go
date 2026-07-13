@@ -11,8 +11,14 @@ import (
 // ErrorHandler mengubah error menjadi response JSON seragam.
 // Detail internal TIDAK dikirim ke client (hanya pesan aman); detail lengkap masuk log.
 func ErrorHandler(c *echo.Context, err error) {
+	// Response bisa sudah ditulis (mis. RequestLogger memanggil error handler lebih dulu).
+	// Tanpa guard ini, body akan tertulis dua kali.
+	if r, _ := echo.UnwrapResponse(c.Response()); r != nil && r.Committed {
+		return
+	}
+
 	code := http.StatusInternalServerError
-	msg := "terjadi kesalahan pada server"
+	msg := "internal server error"
 
 	var he *echo.HTTPError
 	if errors.As(err, &he) {

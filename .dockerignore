@@ -1,0 +1,10 @@
+.git
+.env
+*.log
+/bin/
+/api
+/worker
+/scheduler
+openspec/
+docs/
+README.md

@@ -39,7 +39,7 @@ func RedisRateLimiter(rdb *redis.Client, limit int, window time.Duration) echo.M
 				rdb.Expire(ctx, key, window)
 			}
 			if count > int64(limit) {
-				return echo.NewHTTPError(http.StatusTooManyRequests, "terlalu banyak permintaan")
+				return echo.NewHTTPError(http.StatusTooManyRequests, "too many requests")
 			}
 			return next(c)
 		}

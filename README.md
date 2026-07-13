@@ -22,7 +22,15 @@ cp .env.example .env      # lalu isi DATABASE_URL, REDIS_URL, dll
 go mod tidy
 
 # 5. Jalankan
-go run ./cmd/api
+go run ./cmd/api        # HTTP server
+go run ./cmd/worker     # consumer queue (background job)
+go run ./cmd/scheduler  # cron (jalankan SATU instance)
+```
+
+Atau seluruh stack sekaligus (api + worker + scheduler + postgres + redis):
+
+```bash
+docker compose up --build
 ```
 
 Env di-inject via runtime (12-factor), `.env` dipakai untuk tooling lokal (docker-compose `env_file`, direnv). Lihat `.env.example` untuk daftar variabel.
@@ -52,7 +60,12 @@ internal/
 
 Lihat [docs/add-new-module.md](docs/add-new-module.md) — pola lengkap memakai modul `example` sebagai contoh.
 
+## Worker & queue
+
+Repo ini menghasilkan tiga binary (`cmd/api`, `cmd/worker`, `cmd/scheduler`) dari kode yang sama. Producer/consumer pakai Asynq (Redis), scheduler pakai `robfig/cron`. Detail: [docs/worker-queue.md](docs/worker-queue.md).
+
 ## Endpoint bawaan
 
+- `GET /health` — health check (DB + Redis)
 - `GET /metrics` — metrik Prometheus
-- `/merchants` (modul `example`) — contoh CRUD sebagian; hapus/ganti saat mulai service asli
+- `/example` (modul `example`) — contoh CRUD + `POST /example/produce` (enqueue); hapus/ganti saat mulai service asli

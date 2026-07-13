@@ -2,9 +2,12 @@ package example
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/julles/go-boilerplate/internal/example/dto"
@@ -51,9 +54,42 @@ func (r *Repository) GetByID(ctx context.Context, id string) (Merchant, error) {
 
 	var m Merchant
 	if err := r.db.QueryRow(ctx, q, id).Scan(&m.ID, &m.Code, &m.Status, &m.CreatedAt); err != nil {
+		// id yang bukan UUID valid (22P02) tak mungkin cocok → anggap tidak ada.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "22P02" {
+			return Merchant{}, pgx.ErrNoRows
+		}
 		return Merchant{}, err
 	}
 	return m, nil
+}
+
+// ListRecent mengambil merchant yang dibuat dalam rentang [from, to] (satu query, parameterized).
+func (r *Repository) ListRecent(ctx context.Context, from, to time.Time) ([]Merchant, error) {
+	const q = `
+		SELECT id::text, code, status::text, created_at
+		FROM merchant.merchants
+		WHERE created_at BETWEEN $1 AND $2
+		ORDER BY created_at DESC`
+
+	rows, err := r.db.Query(ctx, q, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("query merchants recent: %w", err)
+	}
+	defer rows.Close()
+
+	merchants := make([]Merchant, 0)
+	for rows.Next() {
+		var m Merchant
+		if err := rows.Scan(&m.ID, &m.Code, &m.Status, &m.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan merchant: %w", err)
+		}
+		merchants = append(merchants, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterasi merchants recent: %w", err)
+	}
+	return merchants, nil
 }
 
 // List mengambil daftar merchant dengan paginasi + pencarian opsional (satu query, hindari N+1).

@@ -12,6 +12,10 @@ Go backend boilerplate, dipakai ulang untuk banyak project.
 ## Konvensi
 - Semua config dari env (secret tak di-hardcode). `.env.example` = daftar semua env var yang dibutuhkan, tanpa secret asli; `.env` tidak di-commit.
 
+## Git commit
+- JANGAN tambahkan trailer `Co-Authored-By` (mis. Claude/AI) di commit message. Commit hanya atas nama akun developer.
+- Berlaku di semua session & mesin — jangan pernah menyisipkan co-author AI apa pun.
+
 ## Rules (urutan = prioritas, non-negotiable)
 1. **Security — harga mati.** Validasi input di setiap trust boundary, query pakai parameterized (jangan string concat), jangan bocorkan error internal ke response, secret dari env bukan hardcode.
 2. **Performance — harga mati.** Pilih pola yang efisien; pgx pooling, hindari N+1, jangan alokasi/query yang tak perlu.

@@ -19,6 +19,7 @@ import (
 	"github.com/julles/go-boilerplate/internal/shared/httpx"
 	appmw "github.com/julles/go-boilerplate/internal/shared/middleware"
 	"github.com/julles/go-boilerplate/internal/shared/observability"
+	"github.com/julles/go-boilerplate/internal/shared/queue"
 )
 
 func main() {
@@ -51,6 +52,12 @@ func run() error {
 	}
 	defer rdb.Close()
 
+	qClient, err := queue.NewClient(cfg.RedisURL)
+	if err != nil {
+		return err
+	}
+	defer qClient.Close()
+
 	shutdownTracer := func(context.Context) error { return nil }
 	if cfg.OtelEnabled {
 		shutdownTracer, err = observability.InitTracer(ctx, cfg.ServerName, cfg.OTLPEndpoint)
@@ -79,16 +86,16 @@ func run() error {
 	e.GET("/health", func(c *echo.Context) error {
 		ctx := c.Request().Context()
 		if err := pool.Ping(ctx); err != nil {
-			return echo.NewHTTPError(http.StatusServiceUnavailable, "database tidak sehat")
+			return echo.NewHTTPError(http.StatusServiceUnavailable, "database unhealthy")
 		}
 		if err := rdb.Ping(ctx).Err(); err != nil {
-			return echo.NewHTTPError(http.StatusServiceUnavailable, "redis tidak sehat")
+			return echo.NewHTTPError(http.StatusServiceUnavailable, "redis unhealthy")
 		}
 		return c.JSON(http.StatusOK, httpx.OK(map[string]string{"status": "ok"}))
 	})
 
 	// Registrasi modul (satu baris per modul).
-	example.RegisterRoutes(e, pool, cache.New(rdb))
+	example.RegisterRoutes(e, pool, cache.New(rdb), qClient)
 
 	// Start memblokir sampai SIGINT/SIGTERM, lalu graceful shutdown HTTP.
 	slog.Info("server dimulai", "port", cfg.HTTPPort)

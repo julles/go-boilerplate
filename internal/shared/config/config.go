@@ -21,6 +21,8 @@ type Config struct {
 	RateLimit    int           // jumlah request per window
 	RateWindow   time.Duration // panjang window rate limit
 	RateEnabled  bool          // false = middleware rate limiter tidak dipasang
+
+	WorkerConcurrency int // jumlah task yang diproses paralel oleh worker
 }
 
 // Load membaca konfigurasi dari env. Return error yang menyebut variable yang
@@ -39,6 +41,8 @@ func Load() (Config, error) {
 		RateLimit:    getEnvInt("RATE_LIMIT", 100),
 		RateWindow:   getEnvDuration("RATE_WINDOW", time.Minute),
 		RateEnabled:  getEnvBool("RATE_LIMIT_ENABLED", true),
+
+		WorkerConcurrency: getEnvInt("WORKER_CONCURRENCY", 10),
 	}
 
 	var err error
