@@ -1,0 +1,26 @@
+schema: spec-driven
+
+context: |
+  Go backend boilerplate, di-reuse untuk banyak project.
+  Stack: Echo v5 (HTTP framework), pgx (driver postgres langsung, bukan database/sql, untuk performa).
+
+  Rules (urutan = prioritas, non-negotiable):
+    1. Security — harga mati. Validasi input di tiap trust boundary, parameterized query,
+       jangan bocorkan error internal, secret dari env.
+    2. Performance — harga mati. pgx pooling, hindari N+1, hindari alokasi/query tak perlu.
+    3. KISS — sesimple mungkin sampai junior backend developer paham. Jangan overengineer:
+       no abstraksi spekulatif, no interface untuk satu implementasi.
+  Saat security/performance bentrok dengan simpel, security & performance menang —
+  tapi pilih cara paling simpel yang tetap aman & cepat.
+
+rules:
+  proposal:
+    - Tulis dalam Bahasa Indonesia.
+    - Setiap spec harus mematuhi 3 rules di context (security, performance, KISS) — sebutkan bila relevan.
+  design:
+    - Tulis dalam Bahasa Indonesia.
+    - Utamakan solusi paling simpel yang tetap aman & performant; hindari overengineering.
+  tasks:
+    - Tulis dalam Bahasa Indonesia.
+  specs:
+    - Tulis dalam Bahasa Indonesia.

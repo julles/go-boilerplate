@@ -1,0 +1,24 @@
+# configuration Specification
+
+## Requirements
+
+### Requirement: Konfigurasi dari environment
+Boilerplate SHALL memuat seluruh konfigurasi (port HTTP, koneksi database, koneksi Redis, endpoint OTLP, parameter rate limit) dari environment variable saat startup. Secret MUST NOT di-hardcode di dalam kode.
+
+#### Scenario: Memuat config dari env
+- **WHEN** aplikasi start dengan env yang lengkap
+- **THEN** semua nilai konfigurasi terbaca dari environment
+
+### Requirement: Fail-fast bila config wajib kosong
+Aplikasi SHALL berhenti dengan error yang jelas saat startup bila environment variable wajib (mis. koneksi database) tidak diset, alih-alih menyala dengan nilai default yang tidak aman.
+
+#### Scenario: Env wajib hilang
+- **WHEN** variable koneksi database tidak diset
+- **THEN** aplikasi keluar dengan pesan yang menyebut variable mana yang kurang
+
+### Requirement: File .env.example sebagai acuan
+Boilerplate SHALL menyertakan `.env.example` yang mendaftar semua variable yang dibutuhkan dengan nilai contoh (tanpa secret asli). File `.env` asli MUST NOT di-commit.
+
+#### Scenario: Developer menyiapkan service baru
+- **WHEN** developer menyalin `.env.example` menjadi `.env`
+- **THEN** ia melihat seluruh variable yang perlu diisi untuk menjalankan service

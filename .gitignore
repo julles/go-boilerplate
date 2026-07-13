@@ -1,0 +1,9 @@
+# Secret lokal
+.env
+
+# Binary hasil build
+/api
+/bin/
+
+# Cache/tooling
+*.out
