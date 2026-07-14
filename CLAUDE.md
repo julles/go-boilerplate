@@ -31,6 +31,7 @@ Go backend boilerplate, dipakai ulang untuk banyak project.
 ## Rules (urutan = prioritas, non-negotiable)
 1. **Security — harga mati.** Validasi input di setiap trust boundary, query pakai parameterized (jangan string concat), jangan bocorkan error internal ke response, secret dari env bukan hardcode.
 2. **Performance — harga mati.** Pilih pola yang efisien; pgx pooling, hindari N+1, jangan alokasi/query yang tak perlu.
-3. **KISS.** Kode sesimple mungkin sampai junior backend developer paham. Jangan overengineer: no abstraksi spekulatif, no interface untuk satu implementasi, no config untuk nilai yang tak pernah berubah. Tambah kompleksitas hanya saat benar-benar dibutuhkan.
+3. **Concurrency-safe — harga mati.** Project ini high-traffic, banyak request jalan barengan. Setiap kode (dan setiap spec/design) WAJIB memperhitungkan race condition: shared state diproteksi (mutex/atomic, atau hindari shared state sama sekali), operasi read-modify-write ke DB pakai transaksi/locking yang tepat (mis. `SELECT ... FOR UPDATE`, optimistic lock via versi, atau `INSERT ... ON CONFLICT`), jangan andalkan "cek dulu baru tulis" tanpa proteksi (TOCTOU), dan pastikan idempotensi di jalur yang bisa dobel (retry queue, dobel-submit). Kalau ragu suatu kode aman dari data race, uji dengan `go test -race`.
+4. **KISS.** Kode sesimple mungkin sampai junior backend developer paham. Jangan overengineer: no abstraksi spekulatif, no interface untuk satu implementasi, no config untuk nilai yang tak pernah berubah. Tambah kompleksitas hanya saat benar-benar dibutuhkan.
 
-Saat security/performance bentrok dengan "simpel", security dan performance menang — tapi cari cara paling simpel yang tetap aman & cepat.
+Saat security/performance/concurrency-safety bentrok dengan "simpel", yang tiga menang — tapi cari cara paling simpel yang tetap aman, cepat, dan bebas race.

@@ -8,10 +8,16 @@ context: |
     1. Security — harga mati. Validasi input di tiap trust boundary, parameterized query,
        jangan bocorkan error internal, secret dari env.
     2. Performance — harga mati. pgx pooling, hindari N+1, hindari alokasi/query tak perlu.
-    3. KISS — sesimple mungkin sampai junior backend developer paham. Jangan overengineer:
+    3. Concurrency-safe — harga mati. Project high-traffic, banyak request barengan.
+       Tiap kode & spec WAJIB memperhitungkan race condition: proteksi shared state
+       (mutex/atomic atau hindari sama sekali), read-modify-write ke DB pakai
+       transaksi/locking yang tepat (SELECT ... FOR UPDATE, optimistic lock, atau
+       INSERT ... ON CONFLICT), hindari TOCTOU ("cek dulu baru tulis" tanpa proteksi),
+       dan jaga idempotensi di jalur yang bisa dobel (retry queue, dobel-submit).
+    4. KISS — sesimple mungkin sampai junior backend developer paham. Jangan overengineer:
        no abstraksi spekulatif, no interface untuk satu implementasi.
-  Saat security/performance bentrok dengan simpel, security & performance menang —
-  tapi pilih cara paling simpel yang tetap aman & cepat.
+  Saat security/performance/concurrency-safety bentrok dengan simpel, yang tiga menang —
+  tapi pilih cara paling simpel yang tetap aman, cepat, & bebas race.
 
   Komentar kode WAJIB: setiap kode yang di-generate diberi komentar detail
   (per baris / per blok logika) dalam Bahasa Indonesia, jelaskan maksud & "kenapa"-nya,
@@ -25,10 +31,11 @@ context: |
 rules:
   proposal:
     - Tulis dalam Bahasa Indonesia.
-    - Setiap spec harus mematuhi 3 rules di context (security, performance, KISS) — sebutkan bila relevan.
+    - Setiap spec harus mematuhi 4 rules di context (security, performance, concurrency-safety, KISS) — sebutkan bila relevan.
   design:
     - Tulis dalam Bahasa Indonesia.
-    - Utamakan solusi paling simpel yang tetap aman & performant; hindari overengineering.
+    - Utamakan solusi paling simpel yang tetap aman, performant, & bebas race; hindari overengineering.
+    - Untuk fitur dengan shared state / write ke DB, jelaskan strategi anti race condition-nya.
   tasks:
     - Tulis dalam Bahasa Indonesia.
   specs:
