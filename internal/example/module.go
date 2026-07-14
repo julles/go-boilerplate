@@ -8,18 +8,18 @@ import (
 	"github.com/julles/go-boilerplate/internal/shared/cache"
 )
 
-// RegisterRoutes membangun dependency modul (repo -> service -> handler) dan
-// mendaftarkan route-nya. Tambah modul baru = satu baris pemanggilan di main.go.
+// RegisterRoutes ngerakit dependency modul (repo -> service -> handler) sekaligus
+// mendaftarkan route-nya. Nambah modul baru cukup satu baris pemanggilan di main.go.
 func RegisterRoutes(e *echo.Echo, db *pgxpool.Pool, c *cache.Cache, q *asynq.Client) {
-	// Wiring dependency manual (poor man's DI): rakit dari lapisan terdalam ke luar --
-	// Repository(db) -> Service(repo, cache) -> Handler(service, queue). Eksplisit
-	// begini membuat alur dependency gampang dibaca tanpa framework DI.
+	// Wiring dependency-nya manual (poor man's DI): dirakit dari lapisan terdalam ke
+	// luar — Repository(db) -> Service(repo, cache) -> Handler(service, queue). Ditulis
+	// eksplisit begini bikin alur dependency-nya gampang dibaca tanpa framework DI.
 	h := NewHandler(NewService(NewRepository(db), c), q)
 
-	// Group memberi prefix "/example" pada semua route modul agar routing terisolasi
-	// per modul dan tidak bertabrakan dengan modul lain.
+	// Group ngasih prefix "/example" ke semua route modul, biar routing-nya terisolasi
+	// per modul dan nggak tabrakan sama modul lain.
 	g := e.Group("/example")
-	g.POST("", h.Create)          // buat merchant
+	g.POST("", h.Create)          // bikin merchant
 	g.GET("", h.List)             // daftar merchant (paginasi/search)
 	g.GET("/:id", h.Get)          // ambil satu merchant by id
 	g.POST("/produce", h.Produce) // enqueue pesan ke worker

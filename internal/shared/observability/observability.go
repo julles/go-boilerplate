@@ -15,62 +15,63 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// SetupLogger memasang slog JSON ke stdout sebagai logger default.
-// Tiap log yang dibuat dengan *Context (mis. slog.InfoContext) otomatis menyertakan trace_id.
+// SetupLogger masang slog JSON ke stdout sebagai logger default.
+// Tiap log yang dibuat lewat varian *Context (mis. slog.InfoContext) otomatis nyertain trace_id.
 func SetupLogger() {
 	base := slog.NewJSONHandler(os.Stdout, nil)
 	slog.SetDefault(slog.New(traceHandler{Handler: base}))
 }
 
-// traceHandler menyisipkan trace_id dari context ke tiap record.
+// traceHandler nyisipin trace_id dari context ke tiap record log.
 type traceHandler struct{ slog.Handler }
 
 func (h traceHandler) Handle(ctx context.Context, r slog.Record) error {
-	// trace_id disisipkan otomatis dari context supaya setiap baris log bisa
-	// dikorelasikan dengan span/trace di sistem tracing (satu request → satu trace_id).
-	// Tanpa ini, developer harus menempelkan trace_id manual di tiap call log.
-	// Bila context tidak punya trace aktif, atribut dilewati agar tidak ada field kosong.
+	// trace_id kita sisipin otomatis dari context biar tiap baris log bisa
+	// dikorelasiin sama span/trace di sistem tracing (satu request → satu trace_id).
+	// Tanpa ini, developer harus nempelin trace_id manual di tiap pemanggilan log.
+	// Kalau context-nya nggak punya trace aktif, atributnya kita skip biar nggak ada field kosong.
 	if id := TraceID(ctx); id != "" {
 		r.AddAttrs(slog.String("trace_id", id))
 	}
 	return h.Handler.Handle(ctx, r)
 }
 
-// InitTracer menyiapkan TracerProvider OTLP. Bila endpoint kosong, tracing dimatikan
-// (provider global tetap no-op) dan shutdown yang dikembalikan tidak melakukan apa-apa.
+// InitTracer nyiapin TracerProvider OTLP. Kalau endpoint-nya kosong, tracing dimatiin
+// (provider global-nya tetap no-op) dan fungsi shutdown yang dibalikin nggak ngapa-ngapain.
 func InitTracer(ctx context.Context, serviceName, endpoint string) (func(context.Context) error, error) {
-	// Endpoint kosong = tracing dimatikan. Kita kembalikan shutdown no-op (bukan nil)
-	// supaya pemanggil bisa selalu memanggil defer shutdown() tanpa cek nil — tracing
-	// jadi opsional tanpa membebani kode pemanggil dengan percabangan.
+	// Endpoint kosong berarti tracing dimatiin. Kita balikin shutdown no-op, bukan nil,
+	// biar pemanggil bisa selalu manggil defer shutdown() tanpa harus cek nil dulu —
+	// jadi tracing bisa opsional tanpa bikin kode pemanggil penuh percabangan.
 	if endpoint == "" {
 		slog.Info("OTLP endpoint kosong, tracing dimatikan")
 		return func(context.Context) error { return nil }, nil
 	}
-	// Exporter mengirim span via OTLP/HTTP ke collector di endpoint.
+	// Exporter tugasnya ngirim span lewat OTLP/HTTP ke collector yang ada di endpoint.
 	exp, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpointURL(endpoint))
 	if err != nil {
 		return nil, fmt.Errorf("membuat OTLP exporter: %w", err)
 	}
-	// Resource menandai semua span dengan service.name agar trace bisa difilter
+	// Resource nandain semua span dengan service.name biar trace-nya bisa difilter
 	// per-service di backend (Jaeger/Tempo/dll).
 	res, err := resource.New(ctx, resource.WithAttributes(semconv.ServiceName(serviceName)))
 	if err != nil {
 		return nil, fmt.Errorf("membuat resource: %w", err)
 	}
-	// WithBatcher: span di-buffer dan dikirim per-batch, bukan satu-per-satu, agar
-	// export tidak menambah latensi pada jalur request dan hemat koneksi ke collector.
+	// WithBatcher: span-nya di-buffer dulu lalu dikirim per-batch, bukan satu-satu,
+	// biar proses export nggak nambah latensi di jalur request sekaligus hemat koneksi
+	// ke collector.
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exp),
 		sdktrace.WithResource(res),
 	)
-	// Set sebagai provider global supaya otel.Tracer(...) di mana pun memakai provider ini.
+	// Kita set sebagai provider global biar otel.Tracer(...) di mana pun pakai provider ini.
 	otel.SetTracerProvider(tp)
-	// tp.Shutdown mem-flush span yang masih tertahan di buffer; WAJIB dipanggil saat
-	// shutdown agar trace terakhir tidak hilang.
+	// tp.Shutdown bakal nge-flush span yang masih nyangkut di buffer; WAJIB dipanggil
+	// pas shutdown biar trace terakhir nggak ilang.
 	return tp.Shutdown, nil
 }
 
-// TraceID mengambil trace id aktif dari context (kosong bila tidak ada).
+// TraceID ngambil trace id yang aktif dari context (balik string kosong kalau nggak ada).
 func TraceID(ctx context.Context) string {
 	sc := trace.SpanContextFromContext(ctx)
 	if sc.HasTraceID() {

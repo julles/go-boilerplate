@@ -2,11 +2,11 @@ package dto
 
 import "time"
 
-// MerchantResponse adalah bentuk merchant yang dikirim ke client.
+// MerchantResponse itu bentuk merchant yang dikirim ke client.
 //
-// Sengaja dibuat sebagai DTO terpisah dari entity/model DB: hanya field yang
-// memang boleh dilihat client yang diekspos di sini. Dengan begitu kolom internal
-// (mis. data audit atau field sensitif) tidak ikut bocor ke response.
+// Sengaja dibikin DTO terpisah dari entity/model DB: cuma field yang memang boleh
+// dilihat client yang diekspos di sini. Dengan begitu kolom internal (misal data
+// audit atau field sensitif) nggak ikut bocor ke response.
 type MerchantResponse struct {
 	ID        string    `json:"id"`
 	Code      string    `json:"code"`

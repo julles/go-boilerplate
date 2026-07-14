@@ -8,37 +8,37 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
-// ErrorHandler mengubah error menjadi response JSON seragam.
-// Detail internal TIDAK dikirim ke client (hanya pesan aman); detail lengkap masuk log.
+// ErrorHandler ngubah error apa pun jadi response JSON yang bentuknya seragam.
+// Detail internal TIDAK dikirim ke client (cuma pesan aman); detail lengkapnya masuk log.
 func ErrorHandler(c *echo.Context, err error) {
-	// Response bisa sudah ditulis (mis. RequestLogger memanggil error handler lebih dulu).
-	// Committed berarti header/status sudah dikirim ke client; menulis lagi akan
-	// menghasilkan body ganda dan warning "superfluous response.WriteHeader",
-	// jadi kita berhenti lebih awal bila response sudah terkirim.
+	// Response bisa jadi udah kelanjur ditulis, misal RequestLogger manggil error
+	// handler duluan. Committed artinya header/status udah kekirim ke client; kalau
+	// kita nulis lagi bakal muncul body dobel plus warning "superfluous
+	// response.WriteHeader", jadi mendingan berhenti di sini kalau response udah terkirim.
 	if r, _ := echo.UnwrapResponse(c.Response()); r != nil && r.Committed {
 		return
 	}
 
-	// Default: anggap error tak terduga sebagai 500 dengan pesan generik.
-	// Pesan generik ini sengaja tidak informatif ke client agar detail internal
-	// (bug, koneksi DB, dsb.) tidak bocor dan bisa dimanfaatkan penyerang.
+	// Default-nya: semua error yang nggak terduga kita anggap 500 dengan pesan generik.
+	// Pesan generik ini sengaja dibikin nggak informatif buat client, biar detail
+	// internal (bug, koneksi DB, dll) nggak bocor dan disalahgunakan penyerang.
 	code := http.StatusInternalServerError
 	msg := "internal server error"
 
-	// Bila error berupa *echo.HTTPError, berarti ini error yang memang kita
-	// bentuk sendiri (mis. 400 dari validator, 404 not found). Status & pesannya
-	// sudah kita kontrol, jadi boleh dipakai apa adanya untuk response.
+	// Kalau error-nya ternyata *echo.HTTPError, berarti ini error yang memang kita
+	// bentuk sendiri (mis. 400 dari validator, atau 404 not found). Status sama
+	// pesannya udah kita kontrol, jadi aman dipakai apa adanya buat response.
 	var he *echo.HTTPError
 	if errors.As(err, &he) {
 		code = he.Code
 		if he.Message != "" {
-			msg = he.Message // pesan ini kita set sendiri, aman ditampilkan
+			msg = he.Message // pesan ini kita set sendiri, jadi aman ditampilkan
 		}
 	}
 
-	// Selalu catat detail lengkap ke log untuk debugging. Inilah tempat detail
-	// error yang tidak dikirim ke client disimpan, lengkap dengan konteks request
-	// (method, path, status) supaya mudah ditelusuri saat investigasi.
+	// Detail lengkap error selalu kita catat ke log buat kebutuhan debugging. Di
+	// sinilah detail yang nggak dikirim ke client itu disimpan, lengkap dengan
+	// konteks request (method, path, status) biar gampang ditelusuri pas investigasi.
 	ctx := c.Request().Context()
 	slog.ErrorContext(ctx, "request error",
 		"error", err,
@@ -48,14 +48,15 @@ func ErrorHandler(c *echo.Context, err error) {
 	)
 
 	// ponytail: skip cek "committed" — handler kita hanya menulis di jalur error, tidak double-write.
-	// Request HEAD tidak boleh punya body menurut spec HTTP, jadi cukup kirim
-	// status code tanpa isi JSON.
+	// Menurut spec HTTP, request HEAD nggak boleh punya body, jadi di sini cukup
+	// kirim status code-nya aja tanpa isi JSON.
 	if c.Request().Method == http.MethodHead {
 		_ = c.NoContent(code)
 		return
 	}
-	// Untuk method lain, kirim envelope error JSON. Bila pengiriman gagal (mis.
-	// koneksi client putus), tidak ada yang bisa dilakukan selain mencatatnya.
+	// Buat method lain, kita kirim envelope error dalam bentuk JSON. Kalau
+	// pengirimannya gagal (misal koneksi client keburu putus), ya nggak ada yang
+	// bisa kita lakuin selain mencatatnya di log.
 	if err := c.JSON(code, Err(msg)); err != nil {
 		slog.ErrorContext(ctx, "gagal mengirim error response", "error", err)
 	}

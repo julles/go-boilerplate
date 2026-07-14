@@ -10,9 +10,9 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
-// Validator mengadaptasi go-playground/validator ke interface echo.Validator,
-// sehingga DTO cukup menandai aturan lewat struct tag `validate:"..."` dan
-// handler memanggil c.Validate(&req).
+// Validator ngadaptasi go-playground/validator ke interface echo.Validator, jadi
+// tiap DTO cukup nandain aturannya lewat struct tag `validate:"..."` dan handler
+// tinggal manggil c.Validate(&req).
 type Validator struct {
 	v *validator.Validate
 }
@@ -21,11 +21,11 @@ func NewValidator() *Validator {
 	return &Validator{v: validator.New()}
 }
 
-// Validate mengembalikan HTTP 400 dengan pesan singkat & aman bila tidak valid.
+// Validate balikin HTTP 400 dengan pesan singkat dan aman kalau datanya nggak valid.
 //
-// Dibungkus sebagai echo.HTTPError 400 supaya ErrorHandler mengenalinya sebagai
-// error yang aman ditampilkan (bukan 500 generik) — ini membedakan "salah input
-// dari client" dengan "error internal server".
+// Kita bungkus sebagai echo.HTTPError 400 biar ErrorHandler ngenalinnya sebagai error
+// yang aman ditampilkan, bukan 500 generik. Ini yang bikin kita bisa bedain antara
+// "input dari client-nya salah" dan "ada error internal di server".
 func (val *Validator) Validate(i any) error {
 	if err := val.v.Struct(i); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, firstError(err))
@@ -33,18 +33,20 @@ func (val *Validator) Validate(i any) error {
 	return nil
 }
 
-// firstError mengubah error validator menjadi pesan singkat (nama field + aturan yang gagal).
-// Aman ditampilkan ke client: hanya nama field & nama aturan, bukan detail internal.
+// firstError ngubah error dari validator jadi pesan singkat, isinya nama field plus
+// aturan yang gagal. Aman ditampilkan ke client karena cuma nama field dan nama
+// aturannya, bukan detail internal.
 func firstError(err error) string {
-	// Validator bisa mengembalikan banyak error sekaligus; kita hanya ambil yang
-	// pertama agar pesan tetap ringkas dan cukup memberi tahu client apa yang salah.
+	// Validator bisa balikin banyak error sekaligus; kita cukup ambil yang pertama
+	// aja biar pesannya tetap ringkas tapi udah cukup ngasih tau client apa yang salah.
 	var verrs validator.ValidationErrors
 	if errors.As(err, &verrs) && len(verrs) > 0 {
 		e := verrs[0]
-		// Hanya bocorkan nama field & nama aturan (mis. "code", "required"),
-		// bukan nilai yang dikirim client atau detail internal lainnya.
+		// Yang kita bocorkan cuma nama field sama nama aturannya (mis. "code",
+		// "required"), bukan nilai yang dikirim client atau detail internal lain.
 		return fmt.Sprintf("field '%s' failed on the '%s' rule", strings.ToLower(e.Field()), e.Tag())
 	}
-	// Fallback bila error bukan ValidationErrors (jarang terjadi): pesan generik aman.
+	// Fallback kalau error-nya ternyata bukan ValidationErrors (jarang kejadian):
+	// balikin pesan generik yang aman aja.
 	return "invalid input"
 }

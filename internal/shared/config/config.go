@@ -1,5 +1,5 @@
 // Package config memuat konfigurasi aplikasi dari environment variable.
-// Secret tidak pernah di-hardcode; semua berasal dari env.
+// Secret nggak pernah di-hardcode; semuanya diambil dari env.
 package config
 
 import (
@@ -14,21 +14,21 @@ import (
 type Config struct {
 	ServerName   string        // dipakai sebagai service name di tracing/log
 	HTTPPort     string        // contoh ":8080"
-	DatabaseURL  string        // wajib
-	RedisURL     string        // wajib
-	OTLPEndpoint string        // kosong = tracing dimatikan (no-op)
-	OtelEnabled  bool          // false = middleware & tracer OTel tidak dipasang
-	RateLimit    int           // jumlah request per window
+	DatabaseURL  string        // wajib diisi
+	RedisURL     string        // wajib diisi
+	OTLPEndpoint string        // kalau kosong, tracing dimatikan (jadi no-op)
+	OtelEnabled  bool          // false = middleware & tracer OTel nggak dipasang
+	RateLimit    int           // jumlah request yang diizinkan per window
 	RateWindow   time.Duration // panjang window rate limit
-	RateEnabled  bool          // false = middleware rate limiter tidak dipasang
+	RateEnabled  bool          // false = middleware rate limiter nggak dipasang
 
-	WorkerConcurrency int // jumlah task yang diproses paralel oleh worker
+	WorkerConcurrency int // berapa task yang diproses paralel oleh worker
 
-	DBPool    DBPoolConfig    // tuning pool koneksi Postgres
-	RedisPool RedisPoolConfig // tuning pool koneksi Redis
+	DBPool    DBPoolConfig    // tuning connection pool Postgres
+	RedisPool RedisPoolConfig // tuning connection pool Redis
 }
 
-// DBPoolConfig menampung parameter pool pgx.
+// DBPoolConfig menampung parameter connection pool pgx.
 type DBPoolConfig struct {
 	MaxConns        int32
 	MinConns        int32
@@ -36,18 +36,19 @@ type DBPoolConfig struct {
 	MaxConnIdleTime time.Duration
 }
 
-// RedisPoolConfig menampung parameter pool go-redis.
+// RedisPoolConfig menampung parameter connection pool go-redis.
 type RedisPoolConfig struct {
 	PoolSize     int
 	MinIdleConns int
 }
 
-// Load membaca konfigurasi dari env. Return error yang menyebut variable yang
-// kurang bila env wajib tidak diset (fail-fast).
+// Load membaca konfigurasi dari env. Kalau ada env wajib yang belum diset, dia
+// balikin error yang nyebut variable mana yang kurang (fail-fast).
 func Load() (Config, error) {
-	// Muat .env bila ada (untuk pengembangan lokal). Di production, env di-inject
-	// runtime dan file .env tidak ada — error sengaja diabaikan. godotenv tidak
-	// menimpa env yang sudah diset, jadi env asli tetap menang.
+	// Muat file .env kalau ada, ini buat kebutuhan development lokal. Di production
+	// env-nya di-inject langsung saat runtime dan file .env memang nggak ada, jadi
+	// error-nya sengaja kita abaikan. godotenv juga nggak akan nimpa env yang sudah
+	// keset duluan, jadi env asli dari environment tetap menang.
 	_ = godotenv.Load()
 
 	cfg := Config{
@@ -73,11 +74,11 @@ func Load() (Config, error) {
 		},
 	}
 
-	// Validasi env wajib dilakukan TERAKHIR, setelah semua default terisi. Dengan
-	// begitu error yang dikembalikan hanya soal secret yang benar-benar hilang,
-	// bukan tercampur dengan parsing nilai opsional. Fail-fast: begitu satu env
-	// wajib kosong, kembalikan error dan biarkan proses berhenti saat startup,
-	// daripada baru meledak saat request pertama menyentuh DB/Redis.
+	// Validasi env wajib sengaja ditaruh PALING AKHIR, setelah semua default terisi.
+	// Dengan urutan ini, error yang balik cuma soal secret yang beneran hilang, nggak
+	// kecampur sama urusan parsing nilai opsional. Prinsipnya fail-fast: begitu ada
+	// satu env wajib yang kosong, langsung balikin error dan biarkan proses berhenti
+	// pas startup, daripada baru meledak nanti pas request pertama nyentuh DB/Redis.
 	var err error
 	if cfg.DatabaseURL, err = requireEnv("DATABASE_URL"); err != nil {
 		return cfg, err
@@ -88,9 +89,9 @@ func Load() (Config, error) {
 	return cfg, nil
 }
 
-// requireEnv mengambil env yang tidak boleh kosong. String kosong dianggap "tidak
-// diset" (bukan hanya nil), karena env var yang di-export tapi kosong sama tidak
-// bergunanya dengan yang absen — keduanya harus ditolak.
+// requireEnv ngambil env yang nggak boleh kosong. String kosong kita anggap "belum
+// diset", bukan cuma yang nil, karena env var yang di-export tapi isinya kosong sama
+// nggak bergunanya dengan yang memang absen — dua-duanya harus ditolak.
 func requireEnv(key string) (string, error) {
 	v := os.Getenv(key)
 	if v == "" {
@@ -99,7 +100,7 @@ func requireEnv(key string) (string, error) {
 	return v, nil
 }
 
-// getEnv: nilai opsional bertipe string. Kembali ke fallback bila env kosong.
+// getEnv: buat nilai opsional bertipe string. Balik ke fallback kalau env-nya kosong.
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -107,9 +108,9 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-// getEnvBool: parsing gagal sengaja jatuh ke fallback (bukan error). Ini menjaga
-// konfigurasi tetap toleran — salah ketik pada flag opsional tidak boleh
-// menggagalkan boot; nilai default yang aman lebih baik daripada crash.
+// getEnvBool: kalau parsing-nya gagal, kita sengaja jatuh ke fallback, bukan bikin
+// error. Tujuannya biar config tetap toleran — salah ketik di flag opsional nggak
+// boleh sampai bikin boot gagal; mendingan pakai nilai default yang aman daripada crash.
 func getEnvBool(key string, fallback bool) bool {
 	if v := os.Getenv(key); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
@@ -119,7 +120,7 @@ func getEnvBool(key string, fallback bool) bool {
 	return fallback
 }
 
-// getEnvInt: sama seperti getEnvBool, nilai non-numerik diabaikan dan pakai fallback.
+// getEnvInt: sama kayak getEnvBool, nilai yang bukan angka diabaikan dan pakai fallback.
 func getEnvInt(key string, fallback int) int {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
@@ -129,8 +130,8 @@ func getEnvInt(key string, fallback int) int {
 	return fallback
 }
 
-// getEnvDuration: menerima format durasi Go (mis. "5m", "1h30m", "500ms").
-// Format tidak valid diabaikan dan memakai fallback.
+// getEnvDuration: nerima format durasi ala Go (mis. "5m", "1h30m", "500ms").
+// Kalau formatnya nggak valid, diabaikan dan balik ke fallback.
 func getEnvDuration(key string, fallback time.Duration) time.Duration {
 	if v := os.Getenv(key); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {

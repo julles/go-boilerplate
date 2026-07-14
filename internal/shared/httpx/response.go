@@ -1,27 +1,27 @@
-// Package httpx berisi envelope response dan error handler bersama.
+// Package httpx berisi envelope response dan error handler yang dipakai bersama.
 package httpx
 
-// Response adalah envelope JSON seragam untuk semua endpoint.
+// Response adalah envelope JSON yang bentuknya seragam untuk semua endpoint.
 //
-// Semua endpoint memakai bentuk yang sama supaya client cukup menulis satu logika
-// parsing: cek `success` dulu, baru ambil `data` atau `message`. omitempty dipakai
-// agar field yang tidak relevan (mis. Message saat sukses) tidak ikut dikirim.
+// Semua endpoint pakai bentuk yang sama biar client cukup nulis satu logika parsing:
+// cek `success` dulu, baru ambil `data` atau `message`. omitempty kita pakai supaya
+// field yang lagi nggak relevan (mis. Message pas sukses) nggak ikut kekirim.
 type Response struct {
 	Success bool   `json:"success"`           // true = sukses, false = error
-	Message string `json:"message,omitempty"` // pesan aman untuk client (biasanya saat error)
-	Data    any    `json:"data,omitempty"`    // payload hasil (hanya saat sukses)
+	Message string `json:"message,omitempty"` // pesan yang aman buat client (biasanya muncul pas error)
+	Data    any    `json:"data,omitempty"`    // payload hasilnya (cuma diisi pas sukses)
 }
 
-// OK membungkus data hasil untuk response sukses.
+// OK membungkus data hasil untuk response yang sukses.
 func OK(data any) Response {
 	return Response{Success: true, Data: data}
 }
 
-// Err membungkus pesan untuk response error.
+// Err membungkus pesan untuk response yang error.
 //
 // Penting: message di sini harus pesan yang AMAN dilihat client (mis. "invalid input"),
-// bukan detail internal seperti stack trace atau query DB. Detail internal dicatat
-// di log oleh ErrorHandler, tidak dikirim ke luar.
+// bukan detail internal kayak stack trace atau query DB. Detail internal biar dicatat
+// di log sama ErrorHandler aja, nggak usah dikirim keluar.
 func Err(message string) Response {
 	return Response{Success: false, Message: message}
 }

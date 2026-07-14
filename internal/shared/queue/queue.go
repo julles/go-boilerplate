@@ -1,5 +1,5 @@
-// Package queue menyiapkan producer (client) dan consumer (server) Asynq.
-// Koneksi Redis dibangun dari REDIS_URL yang sama dengan cache/rate limiter.
+// Package queue nyiapin producer (client) dan consumer (server) Asynq.
+// Koneksi Redis-nya dibangun dari REDIS_URL yang sama kayak cache dan rate limiter.
 package queue
 
 import (
@@ -8,9 +8,9 @@ import (
 	"github.com/hibiken/asynq"
 )
 
-// redisOpt memusatkan parsing REDIS_URL ke opsi koneksi Asynq. Dipakai bersama oleh
-// producer dan consumer supaya keduanya dijamin menunjuk ke Redis yang sama dan
-// format URL hanya diurai di satu tempat (hindari duplikasi/drift).
+// redisOpt mustin parsing REDIS_URL jadi opsi koneksi Asynq di satu tempat. Dipakai
+// bareng sama producer dan consumer biar dua-duanya dijamin nunjuk ke Redis yang sama,
+// dan format URL-nya cuma diurai sekali di satu tempat — jadi nggak ada duplikasi atau drift.
 func redisOpt(url string) (asynq.RedisConnOpt, error) {
 	opt, err := asynq.ParseRedisURI(url)
 	if err != nil {
@@ -19,8 +19,8 @@ func redisOpt(url string) (asynq.RedisConnOpt, error) {
 	return opt, nil
 }
 
-// NewClient membuat producer untuk enqueue task. Tutup dengan Close saat shutdown
-// agar koneksi Redis tidak bocor.
+// NewClient bikin producer buat enqueue task. Jangan lupa Close pas shutdown biar
+// koneksi Redis-nya nggak bocor.
 func NewClient(url string) (*asynq.Client, error) {
 	opt, err := redisOpt(url)
 	if err != nil {
@@ -29,9 +29,9 @@ func NewClient(url string) (*asynq.Client, error) {
 	return asynq.NewClient(opt), nil
 }
 
-// NewServer membuat consumer yang memproses task. concurrency menentukan berapa
-// banyak task diproses paralel oleh satu instance server — knob utama untuk
-// throughput vs. beban DB/downstream.
+// NewServer bikin consumer yang mroses task. concurrency nentuin berapa banyak task
+// yang diproses paralel sama satu instance server — ini knob utama buat ngatur
+// throughput vs beban ke DB/downstream.
 func NewServer(url string, concurrency int) (*asynq.Server, error) {
 	opt, err := redisOpt(url)
 	if err != nil {

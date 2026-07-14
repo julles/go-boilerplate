@@ -8,14 +8,15 @@ import (
 	"github.com/julles/go-boilerplate/internal/shared/cache"
 )
 
-// merchantCacheTTL membatasi umur entri cache. TTL pendek dipilih agar data basi
-// (stale) otomatis kedaluwarsa; ini kompromi umum cache-aside: kita menerima data
-// bisa "usang" maksimal selama TTL demi mengurangi beban baca ke database.
+// merchantCacheTTL membatasi umur tiap entri cache. Kita sengaja pakai TTL pendek
+// biar data yang sudah stale otomatis kedaluwarsa. Ini trade-off khas cache-aside:
+// kita rela data-nya "usang" paling lama selama TTL, ditukar dengan beban baca ke
+// database yang jauh lebih ringan.
 const merchantCacheTTL = 5 * time.Minute
 
-// Service berisi logika bisnis merchant. Struct konkret, tanpa interface (KISS).
-// Service tidak tahu apa-apa soal HTTP/queue; ia hanya menerima tipe primitif/DTO
-// sehingga bisa dipanggil dari handler API, worker, maupun scheduler.
+// Service menampung logika bisnis merchant. Sengaja struct konkret tanpa interface
+// (KISS). Service nggak tahu apa-apa soal HTTP atau queue — dia cuma nerima tipe
+// primitif/DTO, jadi bisa dipanggil dari handler API, worker, maupun scheduler.
 type Service struct {
 	repo  *Repository
 	cache *cache.Cache
@@ -25,9 +26,9 @@ func NewService(repo *Repository, c *cache.Cache) *Service {
 	return &Service{repo: repo, cache: c}
 }
 
-// Create membuat merchant lalu memetakan entity DB (Merchant) ke DTO response.
-// Mapping ke DTO penting agar bentuk internal tabel tidak bocor ke API dan kita
-// bebas mengubah skema DB tanpa memecahkan kontrak response.
+// Create bikin merchant baru lalu memetakan entity DB (Merchant) ke DTO response.
+// Mapping ke DTO ini penting: bentuk internal tabel jadi nggak bocor ke API, dan
+// kita bebas mengubah skema DB tanpa merusak kontrak response ke client.
 func (s *Service) Create(ctx context.Context, code string) (dto.MerchantResponse, error) {
 	m, err := s.repo.Create(ctx, code)
 	if err != nil {
@@ -36,42 +37,43 @@ func (s *Service) Create(ctx context.Context, code string) (dto.MerchantResponse
 	return toResponse(m), nil
 }
 
-// GetByID memakai pola cache-aside: cek cache dulu, baru database.
-// Alur: baca cache -> jika ada (hit) langsung kembalikan; jika tidak (miss) baca DB,
-// isi cache, lalu kembalikan. Pola ini menghemat query DB untuk data yang sering
-// dibaca tetapi jarang berubah.
+// GetByID pakai pola cache-aside: cek cache dulu, database belakangan.
+// Alurnya: baca cache — kalau ada (cache hit) langsung balikin; kalau nggak ada
+// (cache miss) baru baca DB, isi cache-nya, lalu balikin. Pola ini menghemat query
+// DB untuk data yang sering dibaca tapi jarang berubah.
 func (s *Service) GetByID(ctx context.Context, id string) (dto.MerchantResponse, error) {
-	// Key cache diberi prefix "merchant:" sebagai namespace agar tidak bentrok
+	// Key cache dikasih prefix "merchant:" sebagai namespace, biar nggak bentrok
 	// dengan key modul/entity lain yang berbagi store cache yang sama.
 	key := "merchant:" + id
 
-	// Cache hit: kembalikan hasil deserialisasi tanpa menyentuh database sama sekali.
+	// Cache hit: langsung balikin hasil deserialisasi, database nggak disentuh sama sekali.
 	var cached dto.MerchantResponse
 	if s.cache.Get(ctx, key, &cached) {
 		return cached, nil
 	}
 
-	// Cache miss: ambil dari sumber kebenaran (database).
+	// Cache miss: ambil datanya dari database sebagai source of truth.
 	m, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return dto.MerchantResponse{}, err
 	}
-	// Isi cache dengan hasil terbaru (dalam bentuk DTO, sama seperti yang dikembalikan)
-	// agar permintaan berikutnya untuk id ini bisa dilayani dari cache sampai TTL habis.
+	// Lalu isi cache dengan hasil terbaru (bentuk DTO, sama persis dengan yang
+	// dikembalikan) supaya request berikutnya untuk id ini bisa dilayani langsung
+	// dari cache sampai TTL-nya habis.
 	resp := toResponse(m)
 	s.cache.Set(ctx, key, resp, merchantCacheTTL)
 	return resp, nil
 }
 
-// List mengembalikan daftar merchant sebagai DTO. Query paginasi dilakukan di repo;
-// service hanya memetakan tiap entity ke DTO response.
+// List mengembalikan daftar merchant dalam bentuk DTO. Query paginasi-nya dikerjakan
+// di repo; service di sini cuma memetakan tiap entity ke DTO response.
 func (s *Service) List(ctx context.Context, p dto.QueryParams) ([]dto.MerchantResponse, error) {
 	merchants, err := s.repo.List(ctx, p)
 	if err != nil {
 		return nil, err
 	}
-	// Prealokasi slice dengan kapasitas = jumlah baris agar append tidak perlu
-	// realokasi/menyalin ulang array di tengah loop (hemat alokasi).
+	// Prealokasi slice dengan kapasitas = jumlah baris, biar append nggak perlu
+	// realokasi dan nyalin ulang array di tengah loop — lumayan hemat alokasi.
 	out := make([]dto.MerchantResponse, 0, len(merchants))
 	for _, m := range merchants {
 		out = append(out, toResponse(m))
@@ -79,29 +81,30 @@ func (s *Service) List(ctx context.Context, p dto.QueryParams) ([]dto.MerchantRe
 	return out, nil
 }
 
-// ScanRecent mengambil merchant yang dibuat dalam durasi terakhir lalu memproses tiap baris.
-// Teladan pola scheduler "select rentang -> proses langsung". Mengembalikan jumlah baris.
+// ScanRecent ambil merchant yang dibuat dalam durasi terakhir, lalu memproses tiap
+// barisnya. Ini contoh pola scheduler "select rentang lalu proses langsung", dan
+// mengembalikan jumlah baris yang diproses.
 func (s *Service) ScanRecent(ctx context.Context, since time.Duration) (int, error) {
 	to := time.Now()
 	from := to.Add(-since)
 
-	// Ambil semua baris dalam rentang [from, to] dengan satu query (bukan per-item)
-	// untuk menghindari masalah N+1 dan menjaga scan tetap efisien.
+	// Ambil semua baris dalam rentang [from, to] pakai satu query saja (bukan
+	// query per-item), biar terhindar dari masalah N+1 dan scan-nya tetap efisien.
 	merchants, err := s.repo.ListRecent(ctx, from, to)
 	if err != nil {
 		return 0, err
 	}
 	for range merchants {
-		// tempat logika pemrosesan per baris (di sini no-op sebagai teladan)
+		// di sini tempatnya logika pemrosesan per baris (sengaja no-op sebagai contoh)
 	}
-	// Kembalikan jumlah baris yang diproses supaya pemanggil (cron) bisa mencatatnya
-	// di log/metrik untuk observabilitas.
+	// Balikin jumlah baris yang diproses supaya pemanggil (cron) bisa mencatatnya
+	// di log/metrik buat keperluan observabilitas.
 	return len(merchants), nil
 }
 
 // toResponse memetakan entity DB (Merchant) ke DTO yang dipublikasikan ke luar.
-// Fungsi tunggal ini menjadi satu-satunya tempat mapping sehingga konsisten dipakai
-// oleh Create/GetByID/List dan hanya field yang aman/diperlukan yang diekspos.
+// Dengan menaruh mapping di satu fungsi ini, semua pemakainya (Create/GetByID/List)
+// jadi konsisten, dan cuma field yang aman/perlu saja yang kita ekspos ke client.
 func toResponse(m Merchant) dto.MerchantResponse {
 	return dto.MerchantResponse{
 		ID:        m.ID,

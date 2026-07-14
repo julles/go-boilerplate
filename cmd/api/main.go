@@ -23,14 +23,14 @@ import (
 )
 
 func main() {
-	// Siapkan logger global (slog) lebih dulu agar semua log—termasuk error saat
-	// startup gagal—punya format yang konsisten sejak baris pertama dieksekusi.
+	// Set up logger global (slog) duluan supaya semua log — termasuk error waktu
+	// startup gagal — punya format yang konsisten sejak baris pertama dieksekusi.
 	observability.SetupLogger()
 
-	// Seluruh alur nyata ditaruh di run() yang mengembalikan error. Pola ini dipakai
-	// supaya semua `defer` (penutupan koneksi DB/Redis/tracer) tetap dieksekusi:
-	// os.Exit() TIDAK menjalankan defer, jadi Exit hanya boleh dipanggil di sini,
-	// setelah run() benar-benar selesai dan defer-nya sudah jalan.
+	// Semua alur sebenarnya kita taruh di run() yang balikin error. Kenapa dipisah begini?
+	// Supaya semua `defer` (nutup koneksi DB/Redis/tracer) tetap kejalan. os.Exit() itu
+	// nggak menjalankan defer, jadi Exit cuma boleh dipanggil di sini — setelah run()
+	// benar-benar selesai dan defer-nya udah sempat jalan.
 	if err := run(); err != nil {
 		slog.Error("aplikasi berhenti karena error", "error", err)
 		os.Exit(1)
@@ -38,96 +38,99 @@ func main() {
 }
 
 func run() error {
-	// ctx dipakai hanya untuk fase startup (membuka pool DB, konek Redis, init tracer).
-	// Background() cukup di sini karena tiap request HTTP nanti punya context sendiri.
+	// ctx ini cuma dipakai buat fase startup: buka connection pool DB, konek Redis, init
+	// tracer. Background() udah cukup di sini karena tiap request HTTP nanti bawa context
+	// sendiri-sendiri.
 	ctx := context.Background()
 
-	// Muat konfigurasi (env/file) paling awal. Jika config invalid, langsung berhenti
-	// sebelum menyentuh dependency apa pun—percuma buka koneksi kalau konfignya salah.
+	// Load konfigurasi (dari env/file) paling awal. Kalau config-nya invalid, langsung
+	// berhenti sebelum nyentuh dependency apa pun — percuma buka koneksi kalau confignya
+	// aja udah salah.
 	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
 
-	// Dependency dibuat berurutan dari yang paling mendasar (DB, Redis, queue, tracer).
-	// Tiap dependency langsung dipasangi `defer Close()` tepat setelah berhasil dibuat,
-	// sehingga urutan penutupan otomatis kebalikan urutan pembuatan (LIFO) dan tidak
-	// ada resource yang bocor bila salah satu langkah berikutnya gagal.
+	// Dependency dibikin berurutan dari yang paling mendasar dulu: DB, Redis, queue,
+	// tracer. Tiap dependency langsung dipasangi `defer Close()` begitu berhasil dibuat,
+	// jadi urutan nutupnya otomatis kebalik dari urutan bikinnya (LIFO) dan nggak ada
+	// resource yang bocor kalau salah satu langkah berikutnya gagal di tengah jalan.
 
-	// Pool koneksi PostgreSQL. Pakai pool (bukan koneksi tunggal) agar banyak request
-	// HTTP bisa berbagi koneksi secara efisien tanpa reconnect tiap kali.
+	// Connection pool PostgreSQL. Kita pakai pool, bukan koneksi tunggal, biar banyak
+	// request HTTP bisa berbagi koneksi secara efisien tanpa reconnect tiap kali.
 	pool, err := database.NewPool(ctx, cfg.DatabaseURL, cfg.DBPool)
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
 
-	// Client Redis untuk cache dan rate limiter. Dibuat setelah DB karena beberapa
-	// alur (mis. rate limiter) baru dipasang belakangan dan bergantung pada rdb ini.
+	// Client Redis buat cache sekaligus rate limiter. Dibikin setelah DB karena beberapa
+	// alur — misalnya rate limiter — baru dipasang belakangan dan nyandar ke rdb ini.
 	rdb, err := cache.NewClient(ctx, cfg.RedisURL, cfg.RedisPool)
 	if err != nil {
 		return err
 	}
 	defer rdb.Close()
 
-	// Client queue (asynq) untuk mengirim/enqueue task ke worker. API server hanya
-	// memproduksi task; yang mengeksekusi adalah proses worker terpisah.
+	// Client queue (asynq) buat kirim/enqueue task ke worker. API server di sini cuma
+	// jadi produsen task; yang benar-benar mengeksekusinya adalah proses worker terpisah.
 	qClient, err := queue.NewClient(cfg.RedisURL)
 	if err != nil {
 		return err
 	}
 	defer qClient.Close()
 
-	// Default no-op agar `defer shutdownTracer(...)` di bawah selalu aman dipanggil,
-	// walau OpenTelemetry tidak diaktifkan. Dengan begitu tidak perlu cek nil saat shutdown.
+	// Kita kasih default no-op dulu biar `defer shutdownTracer(...)` di bawah selalu aman
+	// dipanggil walaupun OpenTelemetry-nya nggak diaktifkan. Jadi pas shutdown nggak usah
+	// ada cek nil segala.
 	shutdownTracer := func(context.Context) error { return nil }
 	if cfg.OtelEnabled {
-		// Tracer hanya diinisialisasi bila tracing dinyalakan lewat config, supaya
-		// deployment yang tak butuh observability tidak menanggung overhead-nya.
+		// Tracer baru di-init kalau tracing memang dinyalakan lewat config, supaya
+		// deployment yang nggak butuh observability nggak ikut nanggung overhead-nya.
 		shutdownTracer, err = observability.InitTracer(ctx, cfg.ServerName, cfg.OTLPEndpoint)
 		if err != nil {
 			return err
 		}
 	}
-	// Pakai context baru (bukan ctx startup) supaya flush trace terakhir tetap bisa
-	// dikirim saat shutdown, meski ctx startup sudah tidak relevan. Error diabaikan
-	// karena ini best-effort cleanup dan proses memang sedang berhenti.
+	// Sengaja pakai context baru, bukan ctx startup, biar flush trace terakhir tetap bisa
+	// dikirim pas shutdown walaupun ctx startup-nya udah nggak relevan. Error-nya kita
+	// abaikan karena ini cuma best-effort cleanup dan prosesnya juga lagi mau berhenti.
 	defer func() { _ = shutdownTracer(context.Background()) }()
 
 	// HTTP server + middleware bersama.
 	e := echo.New()
-	e.HTTPErrorHandler = httpx.ErrorHandler // error handler yang tidak membocorkan detail internal
-	e.Validator = httpx.NewValidator()      // validasi DTO via struct tag `validate:"..."`
+	e.HTTPErrorHandler = httpx.ErrorHandler // error handler yang nggak bocorin detail internal
+	e.Validator = httpx.NewValidator()      // validasi DTO lewat struct tag `validate:"..."`
 
-	// Urutan pendaftaran middleware = urutan eksekusinya per request. Recover() dipasang
-	// paling awal agar menjadi lapisan terluar: bila handler/middleware lain panic, ia
-	// menangkapnya dan mengubahnya jadi HTTP 500, sehingga satu request bermasalah tidak
+	// Urutan daftar middleware = urutan jalannya per request. Recover() dipasang paling
+	// awal biar jadi lapisan paling luar: kalau handler atau middleware lain panic, dia yang
+	// nangkep dan ngubah jadi HTTP 500, jadi satu request bermasalah nggak sampai
 	// menjatuhkan seluruh server.
 	e.Use(middleware.Recover())
-	// Logger dipasang setelah Recover supaya setiap request tetap tercatat.
+	// Logger dipasang setelah Recover biar tiap request tetap kecatat.
 	e.Use(middleware.RequestLogger())
 	if cfg.OtelEnabled {
-		// Middleware tracing hanya dipasang bila tracer di atas benar-benar diinisialisasi,
-		// agar tidak mengirim span ke tracer no-op.
+		// Middleware tracing cuma dipasang kalau tracer di atas beneran ke-init, biar
+		// nggak ngirim span ke tracer no-op.
 		e.Use(echootel.NewMiddleware(cfg.ServerName)) // tracing
 	}
 	e.Use(echoprometheus.NewMiddleware(cfg.ServerName)) // metrics
 	if cfg.RateEnabled {
-		// Rate limiter berbasis Redis: dibuat opsional lewat config supaya bisa dimatikan
-		// di lingkungan dev/test. Redis dipakai (bukan memori lokal) agar batas tetap
-		// konsisten ketika API di-scale ke banyak instance.
+		// Rate limiter berbasis Redis. Sengaja dibikin opsional lewat config biar gampang
+		// dimatiin di lingkungan dev/test. Kenapa Redis, bukan memori lokal? Biar batasnya
+		// tetap konsisten waktu API di-scale ke banyak instance.
 		e.Use(appmw.RedisRateLimiter(rdb, cfg.RateLimit, cfg.RateWindow))
 	}
-	// Endpoint /metrics diekspos untuk di-scrape Prometheus.
+	// Endpoint /metrics dibuka biar bisa di-scrape Prometheus.
 	e.GET("/metrics", echoprometheus.NewHandler())
 
-	// Health check dipakai oleh load balancer / orchestrator (mis. Kubernetes) untuk
-	// menentukan apakah instance ini layak menerima traffic. Karena itu ia benar-benar
-	// mem-Ping dependency inti, bukan sekadar balas "ok": kalau DB atau Redis mati,
-	// instance harus dilaporkan tidak sehat (503) agar traffic dialihkan.
+	// Health check ini dipakai load balancer atau orchestrator seperti Kubernetes buat
+	// nentuin apakah instance ini masih layak nerima traffic. Makanya dia beneran nge-Ping
+	// dependency inti, bukan cuma balas "ok" doang: kalau DB atau Redis-nya mati, instance
+	// harus dilaporin nggak sehat (503) biar traffic-nya dialihin ke instance lain.
 	e.GET("/health", func(c *echo.Context) error {
-		// Pakai context milik request agar Ping ikut dibatalkan bila klien memutus koneksi
-		// atau timeout, sehingga tidak menggantung.
+		// Pakai context milik request biar Ping-nya ikut dibatalkan kalau klien mutus
+		// koneksi atau kena timeout, jadi nggak menggantung sia-sia.
 		ctx := c.Request().Context()
 		if err := pool.Ping(ctx); err != nil {
 			return echo.NewHTTPError(http.StatusServiceUnavailable, "database unhealthy")
@@ -138,17 +141,17 @@ func run() error {
 		return c.JSON(http.StatusOK, httpx.OK(map[string]string{"status": "ok"}))
 	})
 
-	// Registrasi modul (satu baris per modul). Tiap modul menerima dependency yang
-	// dibutuhkannya (pool DB, cache, queue) lewat injeksi—bukan mengambil variabel global—
-	// agar mudah diuji dan batas antar modul tetap jelas. cache.New(rdb) membungkus client
-	// Redis mentah jadi abstraksi cache yang dipakai modul.
+	// Registrasi modul, satu baris per modul. Tiap modul nerima dependency yang dia butuh
+	// — pool DB, cache, queue — lewat injeksi, bukan ngambil dari variabel global. Cara ini
+	// bikin modul gampang dites dan batas antar modul tetap jelas. cache.New(rdb) di sini
+	// tugasnya membungkus client Redis mentah jadi abstraksi cache yang dipakai modul.
 	example.RegisterRoutes(e, pool, cache.New(rdb), qClient)
 
-	// Start memblokir sampai SIGINT/SIGTERM, lalu graceful shutdown HTTP.
+	// Start bakal blocking sampai ada SIGINT/SIGTERM, lalu graceful shutdown HTTP-nya.
 	slog.Info("server dimulai", "port", cfg.HTTPPort)
-	// e.Start memblokir selama server hidup. Saat shutdown normal ia mengembalikan
-	// http.ErrServerClosed—itu bukan kegagalan, jadi sengaja diabaikan. Error lain
-	// (mis. port sudah terpakai) diteruskan ke atas agar proses keluar dengan status gagal.
+	// e.Start nge-block selama server hidup. Pas shutdown normal, dia balikin
+	// http.ErrServerClosed — itu bukan kegagalan, jadi sengaja kita abaikan. Error lain,
+	// misalnya port udah kepakai, diterusin ke atas biar prosesnya keluar dengan status gagal.
 	if err := e.Start(cfg.HTTPPort); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
