@@ -2,7 +2,8 @@ schema: spec-driven
 
 context: |
   Go backend boilerplate, di-reuse untuk banyak project.
-  Stack: Echo v5 (HTTP framework), pgx (driver postgres langsung, bukan database/sql, untuk performa).
+  Stack: Echo v5 (HTTP framework), pgx (driver postgres langsung, bukan database/sql, untuk performa),
+  go-redis (rate limiter + cache), Asynq (queue/worker), robfig/cron (scheduler).
 
   Rules (urutan = prioritas, non-negotiable):
     1. Security — harga mati. Validasi input di tiap trust boundary, parameterized query,
@@ -19,9 +20,82 @@ context: |
   Saat security/performance/concurrency-safety bentrok dengan simpel, yang tiga menang —
   tapi pilih cara paling simpel yang tetap aman, cepat, & bebas race.
 
+  PRAKTIK WAJIB (checklist konkret dari 4 rules di atas):
+    Security:
+      - Semua input dari luar (body, query, path, header) divalidasi lewat tag validate di DTO.
+      - Query parameterized ($1, $2). Nama kolom/arah sort dari input pakai whitelist di kode,
+        jangan pernah interpolasi identifier dari user.
+      - Error ke client cuma pesan aman (httpx.Err / echo.NewHTTPError); detail internal ke log.
+      - Jangan log secret/PII mentah (token, password, API key, nomor kartu/rekening).
+      - Endpoint publik di belakang rate limiter + batas ukuran body (middleware.BodyLimit).
+      - Authorization dicek per-resource (ownership/tenant), bukan cuma "sudah login".
+      - Jangan tambah dependency baru untuk hal yang stdlib / library existing sudah bisa.
+    Performance:
+      - ctx request diteruskan ke semua call DB/Redis/HTTP supaya cancel ikut propagate.
+      - SELECT kolom yang dipakai saja; tiap query baru sebutkan index yang menopangnya.
+      - List endpoint wajib pagination dengan limit maksimum yang di-clamp di server.
+      - Hindari N+1: WHERE id = ANY($1) atau join; bulk pakai pgx.Batch / CopyFrom.
+      - Transaksi sependek mungkin — jangan panggil API eksternal sambil pegang tx/koneksi pool.
+      - Satu http.Client di-reuse dengan Timeout eksplisit; jangan http.DefaultClient.
+      - Cache ditambah kalau ada bukti jalur itu panas; wajib punya TTL & strategi invalidasi.
+    Concurrency-safe:
+      - Goroutine yang dilepas dari handler jangan pakai context request (dibatalkan begitu
+        response ditulis) — pakai context.WithoutCancel + timeout sendiri.
+      - Jangan spawn goroutine unbounded per request; pakai worker pool / errgroup SetLimit.
+      - Task worker/queue wajib idempoten (Asynq bisa retry & eksekusi dobel):
+        unique key + INSERT ... ON CONFLICT DO NOTHING atau status guard di dalam transaksi.
+      - Scheduler jalan satu instance; kalau di-scale wajib pakai lock (Redis/DB advisory lock).
+      - Counter/saldo/stok: update atomik di DB (UPDATE ... SET x = x - $1 WHERE x >= $1)
+        atau SELECT ... FOR UPDATE. Jangan read di Go, hitung di Go, lalu write.
+    Selesai artinya sudah diverifikasi:
+      - go build ./... && go vet ./... && go test -race ./...
+      - Kalau tidak dijalankan, bilang tidak dijalankan; kalau gagal, laporkan apa adanya.
+
+  Sikap saat menjawab/mengeksplorasi (WAJIB):
+    - Selalu objektif — jawab berdasarkan fakta dari kode & bukti nyata, bukan asumsi.
+      Kalau belum yakin, cek dulu; jangan mengarang, jangan sekadar mengiyakan.
+    - Tiap angka/format/batas yang masuk spec wajib bisa ditunjuk sumbernya. Kalau tak bisa,
+      berarti belum diverifikasi — ambil buktinya dulu.
+    - Kalau ide/pendekatan developer keliru atau ada trade-off berisiko, sampaikan terus terang —
+      termasuk bila itu berarti membantah pendapat sendiri yang terbukti salah setelah diuji.
+    - Sebutkan efek samping sebelum melakukan aksi yang menyentuh data/service nyata.
+    - Berpikir keras saat developer mengeksplorasi sesuatu: telusuri alur end-to-end, pertimbangkan
+      edge case, race condition, & implikasi security/performa dulu sebelum menyimpulkan.
+
   Komentar kode WAJIB: setiap kode yang di-generate diberi komentar detail
   (per baris / per blok logika) dalam Bahasa Indonesia, jelaskan maksud & "kenapa"-nya,
   agar junior backend developer langsung paham.
+
+  Bahasa response API WAJIB Bahasa Inggris: semua message yang dikirim ke client
+  (pesan error validasi, penolakan, error generik) ditulis dalam Bahasa Inggris,
+  karena response bisa dikonsumsi service lain & diteruskan ke integrator/partner.
+  Yang tetap Bahasa Indonesia: komentar kode, pesan log internal, error Go internal,
+  dan dokumen OpenSpec. Pesan dari pihak ketiga diteruskan apa adanya.
+
+  GAYA BAHASA TULISAN (WAJIB) — berlaku untuk semua yang ditulis Bahasa Indonesia
+  (komentar kode, docs, spec, commit message, jawaban di chat):
+  Tulis seperti developer ngobrol, bukan seperti dokumen hasil terjemahan. Campur
+  Bahasa Indonesia dengan istilah teknis English secara natural — struktur kalimatnya
+  Indonesia, istilah teknisnya biarkan English.
+    JANGAN diterjemahkan:
+      kanal            -> channel
+      kredensial       -> credential
+      pemanggil        -> caller
+      tanda tangan     -> signature
+      berkas           -> file
+      kedaluwarsa      -> expired
+      pertukaran mentah-> raw exchange
+      rujukan          -> referensi
+      diturunkan       -> di-derive
+      masa berlaku     -> validity period
+      galat            -> error
+      tembolok         -> cache
+      peladen          -> server
+      unggah / unduh   -> upload / download
+  Tapi jangan over-correct: "meng-enforce", "men-generate-kan", "di-consider" sama
+  kagoknya. Kalau kata Indonesianya wajar dipakai sehari-hari (nilai, kode, wajib,
+  identitas, jalur, alur), pakai itu. Uji cepatnya: baca keras-keras — kalau terdengar
+  seperti sesuatu yang tak pernah diucapkan orang di ruang kerja, ganti.
 
   Struktur modul WAJIB mengikuti internal/example: tiap fitur satu folder berisi
   dto/, handler.go, service.go, repository.go, module.go (+ tasks.go/schedule.go bila
@@ -30,13 +104,21 @@ context: |
 
 rules:
   proposal:
-    - Tulis dalam Bahasa Indonesia.
+    - Tulis dalam Bahasa Indonesia dengan gaya campur seperti di context — istilah teknis biarkan English (channel, credential, signature, caller), jangan diterjemahkan ke Indonesia formal.
     - Setiap spec harus mematuhi 4 rules di context (security, performance, concurrency-safety, KISS) — sebutkan bila relevan.
+    - Sebutkan apa yang TIDAK dikerjakan (non-goals). Scope yang mengembang diam-diam itu sumber overengineering.
   design:
-    - Tulis dalam Bahasa Indonesia.
+    - Tulis dalam Bahasa Indonesia dengan gaya campur seperti di context — istilah teknis biarkan English, jangan diterjemahkan ke Indonesia formal.
     - Utamakan solusi paling simpel yang tetap aman, performant, & bebas race; hindari overengineering.
     - Untuk fitur dengan shared state / write ke DB, jelaskan strategi anti race condition-nya.
+    - Sebutkan trust boundary-nya: input mana yang divalidasi, siapa yang boleh akses resource itu, data sensitif apa yang tidak boleh masuk log/response.
+    - Sebutkan bentuk query & index yang menopangnya, plus perkiraan jumlah row yang disentuh. Kalau ada endpoint list, sebutkan pagination & limit maksimumnya.
+    - Kalau jalurnya bisa dieksekusi dobel (retry queue, dobel-submit, callback upstream), jelaskan kunci idempotensinya.
+    - Kalau ada trade-off yang dibuang, tulis satu baris alasannya — biar keputusannya bisa ditelusuri belakangan.
   tasks:
-    - Tulis dalam Bahasa Indonesia.
+    - Tulis dalam Bahasa Indonesia dengan gaya campur seperti di context — istilah teknis biarkan English, jangan diterjemahkan ke Indonesia formal.
+    - Task terakhir selalu verifikasi - go build ./... && go vet ./... && go test -race ./...
   specs:
-    - Tulis dalam Bahasa Indonesia.
+    - Tulis dalam Bahasa Indonesia dengan gaya campur seperti di context — istilah teknis biarkan English, jangan diterjemahkan ke Indonesia formal.
+    - Message API yang dikutip di skenario (pesan error ke client) ditulis dalam Bahasa Inggris, sesuai aturan di context.
+    - Selain happy path, tulis skenario untuk input invalid, akses tanpa hak, dan eksekusi dobel (request/callback yang sama masuk dua kali).
